@@ -6,9 +6,11 @@ import argparse
 from pathlib import Path
 
 from .evals import EvalCase, evaluate
-from .factory import build_pipeline
+from .factory import build_pipeline, build_triage_service
+from .triage import Alert
 
 _DEFAULT_DOCS = Path(__file__).resolve().parents[2] / "data" / "sample_docs"
+_DEFAULT_RUNBOOKS = Path(__file__).resolve().parents[2] / "data" / "sample_runbooks"
 
 # Evals tied to the bundled sample docs.
 _DATASET = [
@@ -45,6 +47,20 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0 if report.passed == report.total else 1
 
 
+def cmd_triage(args: argparse.Namespace) -> int:
+    service = build_triage_service(k=args.k)
+    runbooks = Path(args.runbooks)
+    for path in sorted(runbooks.glob("*")):
+        if path.suffix.lower() in {".md", ".txt"}:
+            service.ingest_runbook(path.name, path.read_text(encoding="utf-8"))
+    result = service.triage(Alert(message=args.message, service=args.service, severity=args.severity))
+    print(f"Priority: {result.priority}  (matched={result.matched}, confidence={result.confidence})")
+    print(f"Route:    {result.route}")
+    print(f"Runbooks: {', '.join(result.matched_runbooks) or '(none)'}")
+    print(f"Steps:    {result.suggested_steps}")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
     uvicorn.run("rag.app:app", host="0.0.0.0", port=args.port)
@@ -65,6 +81,14 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--docs", default=str(_DEFAULT_DOCS))
     ev.add_argument("--k", type=int, default=3)
     ev.set_defaults(func=cmd_eval)
+
+    tri = sub.add_parser("triage", help="Triage an alert against a runbook folder")
+    tri.add_argument("message", help="The alert message/summary")
+    tri.add_argument("--service", default=None, help="Affected service name")
+    tri.add_argument("--severity", default="medium", choices=["critical", "high", "medium", "low"])
+    tri.add_argument("--runbooks", default=str(_DEFAULT_RUNBOOKS))
+    tri.add_argument("--k", type=int, default=3)
+    tri.set_defaults(func=cmd_triage)
 
     serve = sub.add_parser("serve", help="Run the HTTP API")
     serve.add_argument("--port", type=int, default=8000)

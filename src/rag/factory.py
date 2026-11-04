@@ -9,9 +9,15 @@ from .embeddings import HashingEmbedder
 from .llm import AnthropicLLM, ExtractiveLLM, LLMClient
 from .pipeline import RagPipeline
 from .retriever import Retriever
+from .triage import TriageService
 
 
 def build_pipeline(k: int = 3) -> RagPipeline:
     retriever = Retriever(HashingEmbedder())
     llm: LLMClient = AnthropicLLM() if os.getenv("ANTHROPIC_API_KEY") else ExtractiveLLM()
     return RagPipeline(retriever, llm, k=k)
+
+
+def build_triage_service(k: int = 3) -> TriageService:
+    """A TriageService backed by a default pipeline (same retriever + LLM)."""
+    return TriageService(build_pipeline(k=k))

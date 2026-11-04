@@ -42,6 +42,26 @@ flowchart LR
   builds a grounded prompt and calls Claude when `ANTHROPIC_API_KEY` is set.
 - **Answers cite their sources** — the documents the retrieved chunks came from.
 
+## Alert triage (RAG applied to incident response)
+
+`TriageService` is a focused application of the same pipeline: it indexes
+runbooks, then reads an incoming **alert**, retrieves the most relevant runbook
+passages, and returns grounded next steps plus a **routing decision** —
+`matched`, a `priority` (P1–P4), and where to send it:
+
+- Priority starts from the alert severity (`critical→P1 … low→P4`).
+- A **known** incident (a runbook matches above the score threshold *and* shares
+  a meaningful term) routes to that runbook; an **unknown** failure at
+  `medium`+ severity is escalated one level and routed to a human, because a
+  novel incident with no playbook is the riskier case.
+- The matched steps are produced by the same grounded `LLMClient`, so triage
+  advice is always drawn from real runbook text — it never invents a procedure.
+
+```bash
+python -m rag triage "disk is full, writes failing" --service web-01 --severity critical
+# Priority: P1  (matched=True) ; Route: page on-call immediately; follow runbook: disk_full.md
+```
+
 ## Evals
 
 A RAG system is only as good as it is measurable. [`evals.py`](src/rag/evals.py)
@@ -66,8 +86,11 @@ pip install -e ".[dev]"
 # ask over the bundled sample docs (offline, deterministic)
 python -m rag ask "Where are production secrets stored?"
 
+# triage an alert against the bundled runbooks (offline, deterministic)
+python -m rag triage "disk is full, writes failing" --service web-01 --severity critical
+
 # run the HTTP API
-python -m rag serve      # POST /api/ingest, POST /api/ask
+python -m rag serve      # POST /api/ingest, POST /api/ask, POST /api/triage
 
 # with a real model:
 export ANTHROPIC_API_KEY=sk-...   # pipeline switches to Claude automatically
